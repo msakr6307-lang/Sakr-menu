@@ -1,0 +1,9 @@
+Package: com.sakr.onestatevip
+Name: Sakr Menu VIP
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Ultimate Hack for One State RP - Auto Mine, Magic Bullet, Aimbot, ESP, Speed Hack, God Mode
+Maintainer: Sakr VIP
+Author: Sakr VIP
+Section: Tweaks
+Depends: mobilesubstrate
