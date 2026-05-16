@@ -1,9 +1,0 @@
-Package: com.rebel.sakrmenu
-Name: Sakr Menu
-Depends: mobilesubstrate
-Version: 1.0.0
-Architecture: iphoneos-arm64
-Description: Professional Menu for One State RP
-Maintainer: Sakr
-Author: Sakr
-Section: Tweaks
