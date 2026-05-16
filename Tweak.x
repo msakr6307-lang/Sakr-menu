@@ -1,0 +1,201 @@
+#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
+#import <QuartzCore/QuartzCore.h>
+#import <substrate.h>
+#import <mach-o/dyld.h>
+
+// ========== Offsets ==========
+#define OFFSET_GET_PROGRESS         0x23F9764
+#define OFFSET_SET_PROGRESS         0x23F976C
+#define OFFSET_SEND_ATTACK          0x24CC8DC
+#define OFFSET_BULLET_DAMAGE        0x38
+#define OFFSET_FIRE_RATE            0x44
+#define OFFSET_MAGAZINE_SIZE        0x3C
+#define OFFSET_FIND_TARGET          0x21A84C0
+#define OFFSET_GET_CLOSEST_PLAYER   0x21A8A10
+#define OFFSET_SET_TARGET           0x21A8618
+#define OFFSET_LOCK_TARGET          0x21A8C40
+#define OFFSET_UPDATE_AIM_TARGET    0x21A90D8
+#define OFFSET_SET_SPEED            0x2A6E8C8
+#define OFFSET_SET_HEALTH           0x1C6A870
+#define OFFSET_GET_HEALTH           0x1C6A868
+#define OFFSET_SET_ENERGY           0x1D881F8
+#define OFFSET_SET_STAMINA          0x1D88268
+#define OFFSET_GET_NAME             0x1C4F2B8
+#define OFFSET_GET_POSITION         0x2A501B4
+#define OFFSET_WORLD_TO_SCREEN      0x3F36970
+#define OFFSET_ON_GUI               0x2B67238
+#define OFFSET_INITIALIZE_PLAYERS   0x2959348
+#define OFFSET_GET_DISTANCE         0x1F4A2D0
+
+// ========== Flags ==========
+static BOOL isMagicBulletOn = NO, isOneHitKillOn = NO, isInfiniteAmmoOn = NO, isRapidFireOn = NO;
+static BOOL isAutoMineOn = NO, isGodModeOn = NO, isEnergyOn = NO, isSpeedHackOn = NO;
+static BOOL isEspBoxOn = NO, isEspNameOn = NO, isEspHealthOn = NO, isEspDistanceOn = NO, isEspOn = NO;
+static BOOL isAimbotOn = NO;
+
+// ========== Hook Pointers ==========
+static float (*orig_get_progress)(void *self);
+static void (*orig_set_progress)(void *self, float value);
+static void (*orig_send_attack)(void *self);
+static void* (*orig_find_target)(void *self);
+static void* (*orig_get_closest_player)(void *self);
+static void (*orig_set_target)(void *self, void *target);
+static void (*orig_lock_target)(void *self, void *target);
+static void (*orig_set_speed)(void *self, float speed);
+static void (*orig_set_health)(void *self, float health);
+static void (*orig_set_energy)(void *self, float value);
+static float (*orig_get_distance)(void *self);
+static void (*orig_initialize_players)(void *self, void *near, void *search);
+
+// ========== Hook Functions ==========
+float hook_get_progress(void *self) { return (isAutoMineOn) ? 1.0f : orig_get_progress(self); }
+void hook_set_progress(void *self, float v) { orig_set_progress(self, (isAutoMineOn) ? 1.0f : v); }
+
+void hook_send_attack(void *self) {
+    if ((isMagicBulletOn || isOneHitKillOn) && self) *(float *)((uintptr_t)self + OFFSET_BULLET_DAMAGE) = 999999.0f;
+    if ((isMagicBulletOn || isInfiniteAmmoOn) && self) *(int *)((uintptr_t)self + OFFSET_MAGAZINE_SIZE) = 9999;
+    if ((isMagicBulletOn || isRapidFireOn) && self) *(float *)((uintptr_t)self + OFFSET_FIRE_RATE) = 9999.0f;
+    if (orig_send_attack) orig_send_attack(self);
+}
+
+void* hook_find_target(void *self) {
+    if (!isAimbotOn) return orig_find_target(self);
+    void *target = orig_get_closest_player ? orig_get_closest_player(self) : orig_find_target(self);
+    if (target) { if (orig_lock_target) orig_lock_target(self, target); if (orig_set_target) orig_set_target(self, target); }
+    return target;
+}
+
+void hook_set_speed(void *self, float speed) { orig_set_speed(self, (isSpeedHackOn) ? speed * 10.0f : speed); }
+void hook_set_health(void *self, float health) { orig_set_health(self, (isGodModeOn) ? 999999.0f : health); }
+void hook_set_energy(void *self, float value) { orig_set_energy(self, (isEnergyOn) ? 999999.0f : value); }
+
+void hook_initialize_players(void *self, void *near, void *search) {
+    orig_initialize_players(self, near, search);
+    if (isEspOn) NSLog(@"[ESP] Players list updated.");
+}
+
+// ========== Install Hooks ==========
+void installHooks() {
+    uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
+    MSHookFunction((void *)(base + OFFSET_GET_PROGRESS), (void *)&hook_get_progress, (void **)&orig_get_progress);
+    MSHookFunction((void *)(base + OFFSET_SET_PROGRESS), (void *)&hook_set_progress, (void **)&orig_set_progress);
+    MSHookFunction((void *)(base + OFFSET_SEND_ATTACK), (void *)&hook_send_attack, (void **)&orig_send_attack);
+    MSHookFunction((void *)(base + OFFSET_FIND_TARGET), (void *)&hook_find_target, (void **)&orig_find_target);
+    MSHookFunction((void *)(base + OFFSET_SET_SPEED), (void *)&hook_set_speed, (void **)&orig_set_speed);
+    MSHookFunction((void *)(base + OFFSET_SET_HEALTH), (void *)&hook_set_health, (void **)&orig_set_health);
+    MSHookFunction((void *)(base + OFFSET_SET_ENERGY), (void *)&hook_set_energy, (void **)&orig_set_energy);
+    MSHookFunction((void *)(base + OFFSET_INITIALIZE_PLAYERS), (void *)&hook_initialize_players, (void **)&orig_initialize_players);
+    NSLog(@"[MUSTAFA] All hooks installed!");
+}
+
+// ========== UI ==========
+@interface MUSTAFA_Menu : UIWindow { UIView *menuView; UIButton *falconButton; UIView *contentView; NSString *currentTab; }
++ (instancetype)sharedMenu;
+- (void)setupFalconIcon;
+- (void)setupMenu;
+- (void)showTab:(NSString *)tab;
+- (UIButton *)createButton:(NSString *)title y:(CGFloat)y action:(SEL)action;
+- (void)updateButton:(UIButton *)btn isOn:(BOOL)isOn title:(NSString *)title;
+@end
+
+@implementation MUSTAFA_Menu
+
++ (instancetype)sharedMenu { static MUSTAFA_Menu *shared = nil; static dispatch_once_t onceToken; dispatch_once(&onceToken, ^{ shared = [[self alloc] initWithFrame:[UIScreen mainScreen].bounds]; }); return shared; }
+- (instancetype)initWithFrame:(CGRect)frame { self = [super initWithFrame:frame]; if (self) { self.windowLevel = UIWindowLevelAlert + 1; self.backgroundColor = [UIColor clearColor]; self.rootViewController = [UIViewController new]; [self makeKeyAndVisible]; [self setupFalconIcon]; [self setupMenu]; installHooks(); } return self; }
+
+- (void)setupFalconIcon {
+    falconButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    falconButton.frame = CGRectMake(20, 150, 55, 55);
+    falconButton.backgroundColor = [UIColor blackColor];
+    falconButton.layer.cornerRadius = 27.5;
+    falconButton.layer.borderWidth = 1.5;
+    falconButton.layer.borderColor = [[UIColor goldColor] CGColor];
+    [falconButton setTitle:@"🦅" forState:UIControlStateNormal];
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(moveFalcon:)];
+    [falconButton addGestureRecognizer:pan];
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(toggleMenu)];
+    [falconButton addGestureRecognizer:tap];
+    [self addSubview:falconButton];
+}
+- (void)moveFalcon:(UIPanGestureRecognizer *)sender { CGPoint translation = [sender translationInView:self]; sender.view.center = CGPointMake(sender.view.center.x + translation.x, sender.view.center.y + translation.y); [sender setTranslation:CGPointZero inView:self]; }
+- (void)toggleMenu { [UIView animateWithDuration:0.25 animations:^{ self->menuView.alpha = (self->menuView.alpha == 0 ? 1 : 0); }]; }
+
+- (void)setupMenu {
+    menuView = [[UIView alloc] initWithFrame:CGRectMake(40, 100, 300, 480)];
+    menuView.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.95];
+    menuView.layer.cornerRadius = 20;
+    menuView.layer.borderWidth = 1;
+    menuView.layer.borderColor = [[UIColor goldColor] CGColor];
+    menuView.alpha = 0;
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(moveMenu:)];
+    [menuView addGestureRecognizer:pan];
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(0, 10, 300, 35)];
+    title.text = @"✦ MUSTAFA VIP ✦";
+    title.textColor = [UIColor goldColor];
+    title.textAlignment = NSTextAlignmentCenter;
+    [menuView addSubview:title];
+    NSArray *tabs = @[@"⚔️ WEAPON", @"⛏️ MINING", @"🛡️ PLAYER", @"👁️ ESP"];
+    for (int i = 0; i < tabs.count; i++) { UIButton *tabBtn = [UIButton buttonWithType:UIButtonTypeSystem]; tabBtn.frame = CGRectMake(10 + (i * 70), 50, 65, 35); [tabBtn setTitle:tabs[i] forState:UIControlStateNormal]; [tabBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal]; tabBtn.backgroundColor = [UIColor darkGrayColor]; tabBtn.layer.cornerRadius = 5; tabBtn.tag = i; [tabBtn addTarget:self action:@selector(onTabClick:) forControlEvents:UIControlEventTouchUpInside]; [menuView addSubview:tabBtn]; }
+    contentView = [[UIView alloc] initWithFrame:CGRectMake(10, 95, 280, 370)];
+    [menuView addSubview:contentView];
+    [self addSubview:menuView];
+    [self showTab:@"WEAPON"];
+}
+- (void)moveMenu:(UIPanGestureRecognizer *)sender { CGPoint translation = [sender translationInView:self]; sender.view.center = CGPointMake(sender.view.center.x + translation.x, sender.view.center.y + translation.y); [sender setTranslation:CGPointZero inView:self]; }
+- (void)onTabClick:(UIButton *)sender { NSArray *tabs = @[@"WEAPON", @"MINING", @"PLAYER", @"ESP"]; if (sender.tag < tabs.count) [self showTab:tabs[sender.tag]]; }
+- (void)clearContentView { for (UIView *sub in contentView.subviews) [sub removeFromSuperview]; }
+
+- (void)showTab:(NSString *)tab {
+    [self clearContentView];
+    currentTab = tab;
+    int y = 10;
+    if ([tab isEqualToString:@"WEAPON"]) {
+        magicBulletBtn = [self createButton:@"✨ Magic Bullet" y:y action:@selector(toggleMagicBullet)]; y += 50;
+        oneHitKillBtn = [self createButton:@"💀 1 Hit Kill" y:y action:@selector(toggleOneHitKill)]; y += 50;
+        infiniteAmmoBtn = [self createButton:@"🔫 Infinite Ammo" y:y action:@selector(toggleInfiniteAmmo)]; y += 50;
+        rapidFireBtn = [self createButton:@"⚡ Rapid Fire" y:y action:@selector(toggleRapidFire)];
+    } else if ([tab isEqualToString:@"MINING"]) {
+        autoMineBtn = [self createButton:@"🤖 Auto Mine" y:y action:@selector(toggleAutoMine)];
+    } else if ([tab isEqualToString:@"PLAYER"]) {
+        godModeBtn = [self createButton:@"🛡️ God Mode" y:y action:@selector(toggleGodMode)]; y += 50;
+        energyBtn = [self createButton:@"⚡ Energy" y:y action:@selector(toggleEnergy)]; y += 50;
+        speedHackBtn = [self createButton:@"🏎️ Speed Hack" y:y action:@selector(toggleSpeedHack)];
+    } else if ([tab isEqualToString:@"ESP"]) {
+        isEspOn = YES;
+        espBoxBtn = [self createButton:@"📦 Player Box" y:y action:@selector(toggleEspBox)]; y += 50;
+        espNameBtn = [self createButton:@"🏷️ Player Name" y:y action:@selector(toggleEspName)]; y += 50;
+        espHealthBtn = [self createButton:@"❤️ Player Health" y:y action:@selector(toggleEspHealth)]; y += 50;
+        espDistanceBtn = [self createButton:@"📏 Distance" y:y action:@selector(toggleEspDistance)];
+    }
+}
+
+- (UIButton *)createButton:(NSString *)title y:(CGFloat)y action:(SEL)action {
+    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+    btn.frame = CGRectMake(15, y, 250, 40);
+    btn.backgroundColor = [UIColor colorWithWhite:0.2 alpha:1];
+    btn.layer.cornerRadius = 8;
+    [btn setTitle:[NSString stringWithFormat:@"%@ 🔴 OFF", title] forState:UIControlStateNormal];
+    [btn setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
+    [btn addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
+    [contentView addSubview:btn];
+    return btn;
+}
+- (void)updateButton:(UIButton *)btn isOn:(BOOL)isOn title:(NSString *)title { dispatch_async(dispatch_get_main_queue(), ^{ [btn setTitle:[NSString stringWithFormat:@"%@ %@", title, (isOn ? @"🟢 ON" : @"🔴 OFF")] forState:UIControlStateNormal]; [btn setTitleColor:(isOn ? [UIColor greenColor] : [UIColor redColor]) forState:UIControlStateNormal]; }); }
+
+// ========== Toggles ==========
+- (void)toggleMagicBullet { isMagicBulletOn = !isMagicBulletOn; [self updateButton:magicBulletBtn isOn:isMagicBulletOn title:@"✨ Magic Bullet"]; }
+- (void)toggleOneHitKill { isOneHitKillOn = !isOneHitKillOn; [self updateButton:oneHitKillBtn isOn:isOneHitKillOn title:@"💀 1 Hit Kill"]; }
+- (void)toggleInfiniteAmmo { isInfiniteAmmoOn = !isInfiniteAmmoOn; [self updateButton:infiniteAmmoBtn isOn:isInfiniteAmmoOn title:@"🔫 Infinite Ammo"]; }
+- (void)toggleRapidFire { isRapidFireOn = !isRapidFireOn; [self updateButton:rapidFireBtn isOn:isRapidFireOn title:@"⚡ Rapid Fire"]; }
+- (void)toggleAutoMine { isAutoMineOn = !isAutoMineOn; [self updateButton:autoMineBtn isOn:isAutoMineOn title:@"🤖 Auto Mine"]; }
+- (void)toggleGodMode { isGodModeOn = !isGodModeOn; [self updateButton:godModeBtn isOn:isGodModeOn title:@"🛡️ God Mode"]; }
+- (void)toggleEnergy { isEnergyOn = !isEnergyOn; [self updateButton:energyBtn isOn:isEnergyOn title:@"⚡ Energy"]; }
+- (void)toggleSpeedHack { isSpeedHackOn = !isSpeedHackOn; [self updateButton:speedHackBtn isOn:isSpeedHackOn title:@"🏎️ Speed Hack"]; }
+- (void)toggleEspBox { isEspBoxOn = !isEspBoxOn; [self updateButton:espBoxBtn isOn:isEspBoxOn title:@"📦 Player Box"]; }
+- (void)toggleEspName { isEspNameOn = !isEspNameOn; [self updateButton:espNameBtn isOn:isEspNameOn title:@"🏷️ Player Name"]; }
+- (void)toggleEspHealth { isEspHealthOn = !isEspHealthOn; [self updateButton:espHealthBtn isOn:isEspHealthOn title:@"❤️ Player Health"]; }
+- (void)toggleEspDistance { isEspDistanceOn = !isEspDistanceOn; [self updateButton:espDistanceBtn isOn:isEspDistanceOn title:@"📏 Distance"]; }
+@end
+
+__attribute__((constructor)) static void init() { dispatch_async(dispatch_get_main_queue(), ^{ [MUSTAFA_Menu sharedMenu]; }); }
