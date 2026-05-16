@@ -1,0 +1,9 @@
+Package: com.mustafa.onestatevip
+Name: MUSTAFA VIP
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Ultimate Hack for One State RP - Auto Mine, Magic Bullet, Aimbot, ESP, Speed Hack, God Mode
+Maintainer: MUSTAFA VIP
+Author: MUSTAFA VIP
+Section: Tweaks
+Depends: mobilesubstrate, preferenceloader
